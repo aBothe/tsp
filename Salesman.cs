@@ -27,12 +27,13 @@ using System;
 using System.IO;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace tsp
 {
 	class Salesman
 	{
-		bool showProgress;
+		bool showProgress = true;
 		int n;
 		string inputFile;
 		string[] cityNames;
@@ -40,7 +41,8 @@ namespace tsp
 
 		public static void Main (string[] args)
 		{
-			args = new[] { "ger.txt" };
+			if(args.Length < 1)
+				args = new[] { "afrika.txt" };
 			var salesman = new Salesman ();
 
 			for(int i = 0; i < args.Length; i++)
@@ -70,95 +72,144 @@ namespace tsp
 			salesman.ReadInputMatrix ();
 
 			int[] t;
+			//t = salesman.CalcViaNearestInsertion (0);	salesman.OutputCityNames (t);
 
-			/*
+			//return;
 			Console.WriteLine ("Nearest Insertion:\n");
+			salesman.showProgress = false;
 
 			for(int k = 0; k < salesman.n; k++){
 				t = salesman.CalcViaNearestInsertion (k);
 				salesman.OutputCityNames (t);
 			}
 
-			Console.WriteLine ("Nearest City:\n");
 
-			for(int k = 0; k < salesman.n; k++){
-				float w;
-				t = salesman.CalcViaNextCity (out w,k);
-				Console.Write (w.ToString()+"\t");
-				salesman.OutputCityNames (t);
-			}*/
+			return;
 			float weight;
-			t = salesman.CalcViaNextCity(out weight,3);
+			t = salesman.CalcViaNearestInsertion(3);
 
-			t = salesman.CalcViaBranchAndBound (weight);
+			t = salesman.CalcViaBranchAndBound (250/*weight*/);
 		}
 
 		void ReadInputMatrix()
 		{
 			var lines = File.ReadAllLines (inputFile);
 			int lineIndex = 0;
+			var splitChar = new[] { ' ' };
 
 			n = Convert.ToInt32 (lines[lineIndex++]);
-			cityNames = lines [lineIndex++].Split (' ');
+			cityNames = lines [lineIndex++].Split (splitChar,StringSplitOptions.RemoveEmptyEntries);
 			inputMatrix = new float[n][];
 
 			for (int i=0; i < n; i++) {
-				var splits = lines [lineIndex++].Split (' ');
+				var splits = lines [lineIndex++].Split (splitChar,StringSplitOptions.RemoveEmptyEntries);
 				inputMatrix [i] = new float[n];
 				for (int k = 0; k < n; k++)
 					inputMatrix [i] [k] = Convert.ToSingle (splits[k]);
 			}
 		}
 
-		public float GetTourWeight(int[] tour)
+		public float GetTourWeight(IEnumerable<int> tour)
 		{
-			var n = tour.Length;
-			var currentTown = tour [n-1];
-			var nextTown = tour [0];
+			float w = 0;
 
-			var w=inputMatrix[currentTown][nextTown];
+			var en = tour.GetEnumerator ();
+			if(en.MoveNext())
+				while(true){
+						var currentTown = en.Current;
+						if (!en.MoveNext ())
+							break;
 
-
-			for (var i=0; i<n-1; i++) {
-				currentTown = tour [i];
-				nextTown = tour [i+1];
-
-				w += inputMatrix [currentTown] [nextTown];
-			}
+						w += inputMatrix [currentTown] [en.Current];
+				}
+			en.Dispose ();
 
 			return w;
 		}
 
-		public void OutputCityNames(int[] tour, bool weight=true)
+		public static void DumpGraph(float[][] graph, int padding = 2)
 		{
-			foreach (var i in tour) {
-				Console.Write (cityNames[i]);
-				Console.Write ("->");
+			var formatString = "{0:"+padding+"} ";
+			foreach(var row in graph)
+			{
+				foreach(var v in row)
+					Console.Write(formatString, v);
+				Console.WriteLine();
 			}
-			Console.WriteLine (cityNames[tour[0]]);
+		}
+
+		public void OutputCityNames(IEnumerable<int> tour, bool weight=true)
+		{
+			var en = tour.GetEnumerator ();
+			if(en.MoveNext()){
+				while(true){
+					Console.Write (cityNames[en.Current]);
+					if (!en.MoveNext ())
+						break;
+
+					Console.Write ("->");
+				}
+			}
+			en.Dispose ();
 
 			if(weight)
-				Console.WriteLine("(Weight: "+GetTourWeight (tour)+")");
+				Console.WriteLine(" (Weight: "+GetTourWeight (tour)+")");
+
+			Console.WriteLine();
 		}
 
 		#region Heuristic approaches
 		public int[] CalcViaNearestInsertion(int startCity = 0)
 		{
+			const string formatStr = "{0,5}";
+
+			if (showProgress) {
+				Console.WriteLine ("Start Nearest Insertion @ " + cityNames[startCity]);
+			}
+
 			int currentCity = startCity;
-			var tourResult = new int[n];
+			var tourResult = new List<int>(n);
+			tourResult.Add(startCity);
+			tourResult.Add(startCity);
 			var vertexUsed=new BitArray(n);
 
-			float[] minDistances = inputMatrix [startCity].Clone () as float[];
+			var minDistances = inputMatrix [startCity].Clone () as float[];
 
-			for(int i=0; i < n; i++)
+			for(int i=0; i < n-1; i++)
 			{
-				// Station setzen
-				tourResult [i] = currentCity;
 				// Als 'besucht' markieren
 				vertexUsed [currentCity] = true;
 
+				if (showProgress) {
+					Console.WriteLine ();
+					Console.ForegroundColor = ConsoleColor.Blue;
+					Console.WriteLine ("Iteration "+(i+1).ToString()+":");
+
+					// Dump city names
+					Console.ForegroundColor = ConsoleColor.Black;
+					Console.Write ("\t");
+					for (int k = 0; k < n; k++)
+						if(!vertexUsed[k])
+							Console.Write (string.Format(formatStr,cityNames[k]));
+					Console.WriteLine ();
+
+					// Dump alt
+					Console.Write ("alt\t");
+					for (int k = 0; k < n; k++)
+						if(!vertexUsed[k])
+							Console.Write (string.Format(formatStr,minDistances[k]));
+					Console.WriteLine ();
+
+					// Dump current city
+					Console.Write (cityNames[currentCity]+"\t");
+					for (int k = 0; k < n; k++)
+						if(!vertexUsed[k])
+							Console.Write (string.Format(formatStr,inputMatrix[currentCity][k]));
+					Console.WriteLine ();
+				}
+
 				int nextCity=-1;
-				float tempMin = int.MaxValue;
+				float tempMin = float.PositiveInfinity;
 
 				for (int k = 0; k<n; k++) {
 					if (vertexUsed [k])
@@ -175,111 +226,296 @@ namespace tsp
 				}
 
 
-				if (nextCity < 0 && i < n - 1)
-					throw new InvalidDataException ("nextCityIndex was not set.");
-				currentCity = nextCity;
-			}
-
-			return tourResult;
-		}
-
-		public int[] CalcViaNextCity(out float weight,int startCity=0)
-		{
-			int currentCity = startCity;
-			weight=0;
-			var tourResult = new int[n];
-			var vertexUsed=new BitArray(n);
-
-			for(int i=0; i < n; i++)
-			{
-				// Station setzen
-				tourResult [i] = currentCity;
-				// Als 'besucht' markieren
-				vertexUsed [currentCity] = true;
-
-				int nextCity=-1;
-				float tempDist = float.MaxValue;
-
-				for (int k=0; k < n; k++) {
-					// Stadt ignorieren, wenn bereits besucht oder weiter entfernt als zu 'nextCity'
-					if (vertexUsed [k] || 
-					    inputMatrix[currentCity][k] >= tempDist)
-						continue;
-
-					// Eine an Stadt wurde gefunden, die currentCity am nächsten ist.
-					nextCity = k;
-					tempDist = inputMatrix [currentCity] [k];
-				}
-
 				if (nextCity < 0) {
-					if(i < n - 1)
+					if (i < n - 1)
 						throw new InvalidDataException ("nextCityIndex was not set.");
+					else
+						break;
+				}
+				currentCity = nextCity;
 
-					// Die Distanz der letzten Stadt zum Anfang addieren
-					tempDist = inputMatrix [currentCity] [startCity];
+				if (showProgress) {
+					// Dump min
+					Console.ForegroundColor = ConsoleColor.Green;
+					Console.Write ("min\t");
+					for (int k = 0; k < n; k++)
+						if(!vertexUsed[k])
+							Console.Write (string.Format(formatStr,minDistances[k]));
+					Console.WriteLine ();
+					Console.ForegroundColor = ConsoleColor.Black;
 				}
 
-				weight += tempDist;
-				currentCity = nextCity;
+				// Station setzen
+				if (showProgress) {
+					Console.ForegroundColor = ConsoleColor.Gray;
+					Console.WriteLine ();
+					Console.WriteLine ("Nächste Station setzen..");
+					Console.ForegroundColor = ConsoleColor.Black;
+				}
+
+				float statMin=float.PositiveInfinity;
+				int insertionIndex = 0;
+				for(int j = 0; j<tourResult.Count-1;j++)
+				{
+					var A = tourResult [j];
+					var C = tourResult [j+1];
+					var delta = inputMatrix [A] [nextCity] + inputMatrix[nextCity][C] - inputMatrix [A] [C];
+
+					if (showProgress) {
+						Console.Write ("("+cityNames[A]+"->"+cityNames[C]+")="+inputMatrix [A] [C]);
+						Console.Write ("\t");
+						Console.Write ("("+cityNames[A]+"->"+cityNames[nextCity] +"->"+cityNames[C]+")="+(inputMatrix [A] [nextCity] + inputMatrix[nextCity][C]));
+						Console.WriteLine("\tdelta="+delta);
+					}
+
+					if (statMin > delta) {
+						statMin = delta;
+						insertionIndex = j+1;
+					}
+				}
+
+				if(showProgress){
+					Console.ForegroundColor = ConsoleColor.Red;
+					Console.WriteLine("min(delta)="+statMin+" => Insert "+cityNames[nextCity]+" between "+ cityNames[tourResult[insertionIndex-1]] + " and "+cityNames[tourResult[insertionIndex]]);
+				}
+
+				tourResult.Insert(insertionIndex,nextCity);
+
+				if (showProgress) {
+					Console.ForegroundColor = ConsoleColor.Green;
+					OutputCityNames (tourResult);
+					Console.ResetColor ();
+				}
 			}
 
-			return tourResult;
+			return tourResult.ToArray();
 		}
 		#endregion
 
 		#region BnB
-		public int[] CalcViaBranchAndBound(float maxWeight, int iterationLimit = 0, bool keepInputMatrixUntouched = false)
+		public int[] CalcViaBranchAndBound(float maxWeight, int iterationLimit = 0)
 		{
 			if (iterationLimit <= 0)
 				iterationLimit = n;
 
 			var tour = new List<int>(n);
-			var graph = keepInputMatrixUntouched ? inputMatrix.Clone () as float[][] : inputMatrix;
+			var graph = inputMatrix.Clone () as float[][];
+			var origIndexes = new List<int> (n);
+			float minWeight = 0;
 
 			// Initial preparation
-			for (int i = n-1; i >= 0; i--)
+			for (int i = 0; i < n; i++){
 				graph [i] [i] = float.PositiveInfinity;
+				origIndexes.Add (i);
+			}
 
-			float minWeight = 0;
-			int pointToRemoveNext_y, pointToRemoveNext_x;
-			initiallyReduceByMinimum(graph, maxWeight, ref minWeight, out pointToRemoveNext_y, out pointToRemoveNext_x);
+			initiallyReduceByMinimum (graph, maxWeight, ref minWeight);
+
+			int t_y, t_x;
+			float maxRemovableValue;
+			searchNextPointtoRemove (graph, out t_y, out t_x, out maxRemovableValue);
 
 
-			return tour.ToArray ();
+
+			graph [t_y] [t_x] = float.PositiveInfinity;
+
+			initiallyReduceByMinimum(graph, maxWeight, ref minWeight);
+
+
 			/*
-			while(pointToRemoveNext_y >= 0) {
-				var backup = graph [pointToRemoveNext_y] [pointToRemoveNext_x];
-				graph [pointToRemoveNext_y] [pointToRemoveNext_x] = float.PositiveInfinity;
-				int pn_y, pn_x;
-				if (initiallyReduceByMinimum (graph, maxWeight, ref minWeight, out pn_y, out pn_x)) {
+			var back = graph [t_x] [t_y];
+			graph [t_x] [t_y] = float.PositiveInfinity;
 
-				}
-			}*/
+			int n_y, n_x;
+			if (!initiallyReduceByMinimum (graph, maxWeight, ref minWeight, out n_y, out n_x)) {
+				graph [t_x] [t_y] = back;
+			}
+		
+
+			var ret = bnb (graph, origIndexes, tour, ref minWeight, ref maxWeight);
+
+			if (ret == null)
+				return new int[0];
+			return ret.ToArray();*/
+
+			return new int[0];
+
 		}
 
-		static bool initiallyReduceByMinimum(float[][] graph, float maxWeight, ref float minWeight, out int minCoord_Row, out int minCoord_Col)
+		static void bnb(float[][] graph, float minWeight, float maxWeight)
 		{
+			// Spalten/Zeilen auf mind. einen Nullwert reduzieren, das Mindestgewicht aufaddieren
+			initiallyReduceByMinimum (graph, maxWeight, ref minWeight);
+
+			// Eine Kante heraussuchen, die bei Verbot eine höchste untere Schranke hervorruft
+			float maxRemovableValue;
+			int y, x;
+			searchNextPointtoRemove(graph, out y, out x, out maxRemovableValue);
+
+			// Zuerst prüfen, ob Rückkante
+
+			// Die erste Tour enthält (y,x)
+			var back = graph [x] [y];
+			graph [x] [y] = float.PositiveInfinity; // ohne Rückkante (x,y)
+			var firstBranch = cloneGraph (graph, y, x);
+			graph [x] [y] = back;
+
+
+
+			/*
+			var firstTour = new Tuple<int,int>[tour.Length+1];
+			tour.CopyTo (firstTour, 0);
+			firstTour [firstTour.Length-1] = new Tuple<int, int> (y, x);*/
+
+			// Die zweite Menge enthält (y,x) nicht
+			var secondRangeMinWeight = minWeight;
+			var secondGraph = graph.Clone () as float[][];
+			secondGraph [y] [x] = float.PositiveInfinity;
+
+			int y2, x2;
+			//initiallyReduceByMinimum (secondGraph, maxWeight, ref secondRangeMinWeight, out y2, out x2);
+		}
+		/*
+		static List<int> bnb(float[][] graph, List<int> originalIndexes, List<int> optTour, ref float minWeight, ref float maxWeight)
+		{
+			float minWeight_withoutEdge;
+			List<int> optTour_withoutEdge;
+			float back;
+			if (graph.Length == 0)
+				return optTour;
+
+			int pointToRemoveNext_y, pointToRemoveNext_x;
+			if (!initiallyReduceByMinimum (graph, maxWeight, ref minWeight, out pointToRemoveNext_y, out pointToRemoveNext_x)) 
+				return null;
+
+			if(pointToRemoveNext_x == -1){
+				float maxRemovableVal;
+				searchNextPointtoRemove (graph, out pointToRemoveNext_x, out pointToRemoveNext_y, out maxRemovableVal);
+
+				if (minWeight + maxRemovableVal > maxWeight)
+					return null;
+			}
+
+			// Ohne Kante berechnen..
+			back = graph [pointToRemoveNext_y] [pointToRemoveNext_x];
+			graph [pointToRemoveNext_y] [pointToRemoveNext_x] = float.PositiveInfinity;
+			minWeight_withoutEdge = minWeight;
+			optTour_withoutEdge = bnb (graph.Clone() as float[][], originalIndexes, new List<int> (optTour), ref minWeight_withoutEdge, ref maxWeight);
+
+			graph [pointToRemoveNext_y] [pointToRemoveNext_x] = back;
+
+
+			// Die Rücktour verbieten
+			back = graph [pointToRemoveNext_x] [pointToRemoveNext_y];
+			graph [pointToRemoveNext_x] [pointToRemoveNext_y] = float.PositiveInfinity;
+
+			var reducedGraph = cloneGraph (graph, pointToRemoveNext_y, pointToRemoveNext_x);
+
+			graph [pointToRemoveNext_x] [pointToRemoveNext_y] = back;
+
+
+			var reducedIndexList = new List<int> (originalIndexes);
+			optTour.Add (originalIndexes[pointToRemoveNext_x]);
+			reducedIndexList.RemoveAt (pointToRemoveNext_x);
+
+			var optTour_withEdge = bnb (reducedGraph, reducedIndexList, new List<int>(optTour), ref minWeight, ref maxWeight);
+
+			if (minWeight_withoutEdge < minWeight){
+				minWeight = minWeight_withoutEdge;
+				return optTour_withoutEdge;
+			}
+			return optTour_withEdge;
+		}*/
+
+		static float[][] cloneGraph(float[][] g, int rowToOmit, int colToOmit)
+		{
+			int newDimension = g.Length - 1;
+			var clonedGraph = new float[newDimension][];
+
+			for(int i = newDimension-1;i>=0;i--)
+			{
+				var targetRow = g[rowToOmit >= i ? i + 1 : i];
+				var row = clonedGraph[i] = new float[newDimension];
+
+				for (int k = newDimension-1; k>=0; k--)
+					row [k] = targetRow [colToOmit >= k ? k+1 : k];
+			}
+
+			return clonedGraph;
+		}
+
+		static void searchNextPointtoRemove(float[][] graph, out int row, out int col, out float maxRemovableValue)
+		{
+			maxRemovableValue = 0;
+			row = 0;
+			col = 0;
+
+			/*
+			 * graph enthält in jeder Spalte und in jeder Zeile mind. 1 Null!
+			 * 
+			 * 
+			 */
+			var i_max = graph.Length-1;
+
+			for(int i = i_max;i>=0;i--)
+			{
+				var curRow = graph [i];
+				bool hadZero = false;
+				for(int k = i_max;k>=0;k--)
+				{
+					if (curRow[k] <= 0) {
+						hadZero = true;
+
+						float tempMin;
+
+						if (hadZero)
+							tempMin = 0;
+						else{
+							tempMin = float.PositiveInfinity;
+							for (int c = i_max; c>=0; c--)
+								if (c != k && curRow[c] < tempMin)
+									tempMin = curRow[c];
+						}
+
+						var tempMin2 = float.PositiveInfinity;
+						for (int c = i_max; c>=0; c--)
+							if (c != i && graph [c] [k] < tempMin2)
+								tempMin2 = graph [c] [k];
+
+						if (tempMin + tempMin2 > maxRemovableValue) {
+							row = i;
+							col = k;
+							maxRemovableValue = tempMin + tempMin2;
+						}
+					}
+				}
+			}
+		}
+
+		static bool initiallyReduceByMinimum(float[][] graph, float maxWeight, ref float minWeight)
+		{
+			var i_max = graph.Length -1;
 			List<float> minBackups = null, minBackups_colBased = null;
 			bool checkForMax = maxWeight >= 0 && maxWeight < float.PositiveInfinity;
 			if (checkForMax)
 				minBackups = new List<float> (graph.Length);
-
+			/*
 			minCoord_Row = -1;
 			minCoord_Col = -1;
-			var globalMin_y = 0;
+			*/var globalMin_y = 0;
 			var globalMin_x = 0;
 			float globalMin = 0;
 
-			for (int i= graph.Length-1; i>=0; i--) {
+			for (int i= i_max; i>=0; i--) {
 				// Zeilenweises bestimmen des Minimums
 				float tempMin = float.PositiveInfinity;
-				for (int k = graph.Length -1; k >= 0; k--) {
+				for (int k = i_max; k >= 0; k--) {
 					if (tempMin > graph [i] [k])
 						tempMin = graph [globalMin_y = i] [globalMin_x = k];
 				}
 
 				if (checkForMax && minWeight + tempMin > maxWeight) {
-					rollbackGraphMatrix(graph, minBackups);
+					rollbackGraphMatrix(graph, ref minWeight, minBackups);
 					return false;
 				}
 
@@ -291,9 +527,9 @@ namespace tsp
 
 				if (tempMin > 0) {
 					if (tempMin > globalMin) {
-						minCoord_Row = globalMin_y;
+						/*minCoord_Row = globalMin_y;
 						minCoord_Col = globalMin_x;
-						globalMin = tempMin;
+						*/globalMin = tempMin;
 					}
 					// Abzug der jeweiligen Minima von den Kantenmarkierungen
 					for (int k = graph.Length -1; k >= 0; k--)
@@ -304,18 +540,18 @@ namespace tsp
 			if (checkForMax)
 				minBackups_colBased = new List<float> (graph.Length);
 
-			for (int i= graph.Length-1; i>=0; i--) {
+			for (int i= i_max; i>=0; i--) {
 				// Spaltenweises bestimmen des Minimums
 				float tempMin = float.PositiveInfinity;
-				for (int k = graph.Length -1; k >= 0; k--) {
+				for (int k = i_max; k >= 0; k--) {
 					if (tempMin > graph [k][i]){
 						tempMin = graph [globalMin_y = k] [globalMin_x = i];
 					}
 				}
 
 				if (checkForMax && minWeight + tempMin > maxWeight) {
-					rollbackGraphMatrix(graph, minBackups);
-					rollbackGraphMatrix_ColumnBased (graph, minBackups_colBased);
+					rollbackGraphMatrix(graph, ref minWeight, minBackups);
+					rollbackGraphMatrix_ColumnBased (graph, ref minWeight, minBackups_colBased);
 					return false;
 				}
 
@@ -327,13 +563,13 @@ namespace tsp
 
 				if (tempMin > 0) {
 					if (tempMin > globalMin) {
-						minCoord_Row = globalMin_y;
+						/*minCoord_Row = globalMin_y;
 						minCoord_Col = globalMin_x;
-						globalMin = tempMin;
+						*/globalMin = tempMin;
 					}
 
 					// Abzug der jeweiligen Minima von den Kantenmarkierungen
-					for (int k = graph.Length -1; k >= 0; k--)
+					for (int k = i_max; k >= 0; k--)
 						graph [k][i] -= tempMin;
 				}
 			}
@@ -341,7 +577,7 @@ namespace tsp
 			return true;
 		}
 
-		static void rollbackGraphMatrix(float[][] graph, List<float> minBackups)
+		static void rollbackGraphMatrix(float[][] graph, ref float minWeight, List<float> minBackups)
 		{
 			if (minBackups.Count > graph.Length)
 				throw new InvalidOperationException ("minBackups muss weniger oder gleich viele Elemente als die Inputmatrix enthalten");
@@ -349,13 +585,14 @@ namespace tsp
 			for(int i = minBackups.Count -1; i >= 0; i--)
 			{
 				var tempMin = minBackups[i];
+				minWeight -= tempMin;
 				var row = graph [i];
 				for (int k = row.Length -1; k>=0; k--)
 					row [k] += tempMin;
 			}
 		}
 
-		static void rollbackGraphMatrix_ColumnBased(float[][] graph, List<float> minBackups)
+		static void rollbackGraphMatrix_ColumnBased(float[][] graph, ref float minWeight, List<float> minBackups)
 		{
 			if (minBackups.Count > graph.Length)
 				throw new InvalidOperationException ("minBackups muss weniger oder gleich viele Elemente als die Inputmatrix enthalten");
@@ -363,6 +600,7 @@ namespace tsp
 			for(int i = minBackups.Count -1; i >= 0; i--)
 			{
 				var tempMin = minBackups[i];
+				minWeight -= tempMin;
 				for (int k = graph.Length -1; k>=0; k--)
 					graph[k][i] += tempMin;
 			}
