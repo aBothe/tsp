@@ -28,12 +28,14 @@ using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace tsp
 {
 	class Salesman
 	{
 		bool showProgress = true;
+		bool latex = false;
 		int n;
 		string inputFile;
 		string[] cityNames;
@@ -72,23 +74,27 @@ namespace tsp
 			salesman.ReadInputMatrix ();
 
 			int[] t;
-			//t = salesman.CalcViaNearestInsertion (0);	salesman.OutputCityNames (t);
+			// Nearest Insertion bei Stadt 0 berechnen
+			//t = salesman.CalcViaNearestInsertion (0);	salesman.OutputCityNames (t); return;
 
-			//return;
 			Console.WriteLine ("Nearest Insertion:\n");
 			salesman.showProgress = false;
 
+			// Nearest Insertion bei allen verfügbaren Städten
 			for(int k = 0; k < salesman.n; k++){
 				t = salesman.CalcViaNearestInsertion (k);
 				salesman.OutputCityNames (t);
 			}
-
-
 			return;
-			float weight;
-			t = salesman.CalcViaNearestInsertion(3);
 
-			t = salesman.CalcViaBranchAndBound (250/*weight*/);
+
+			// Experimentell: Branch and Bound
+			float weight;
+			t = salesman.CalcViaNearestInsertion(3); // Grobe Tour ab einer beliebigen Stadt berechnen
+			weight = salesman.GetTourWeight (t); // Obere Schranke für Tourlänge erhalten
+
+			t = salesman.CalcViaBranchAndBound (250/*weight*/); // Branch and Bound ausführen
+			salesman.OutputCityNames (t);
 		}
 
 		void ReadInputMatrix()
@@ -106,6 +112,23 @@ namespace tsp
 				inputMatrix [i] = new float[n];
 				for (int k = 0; k < n; k++)
 					inputMatrix [i] [k] = Convert.ToSingle (splits[k]);
+			}
+
+			if (latex) {
+				var sb = new StringBuilder ();
+				sb.Append (@"$$ \begin{tabular}{").Append ('l', n + 1).AppendLine ("}");
+				for (int i = 0; i < n; i++)
+					sb.Append ("&").Append (cityNames [i]);
+				for (int i = 0; i < n; i++) {
+					sb.Append (@"\\");
+					sb.AppendLine ();
+					sb.Append (cityNames [i]);
+					for (int k = 0; k < n; k++)
+						sb.Append ("&").Append (inputMatrix [i] [k]);
+				}
+				sb.AppendLine ().AppendLine (@"\end{tabular} $$");
+
+				Console.WriteLine (sb.ToString ());
 			}
 		}
 
@@ -147,7 +170,10 @@ namespace tsp
 					if (!en.MoveNext ())
 						break;
 
-					Console.Write ("->");
+					if (latex)
+						Console.Write (@"\rightarrow ");
+					else
+						Console.Write ("->");
 				}
 			}
 			en.Dispose ();
@@ -183,29 +209,59 @@ namespace tsp
 				if (showProgress) {
 					Console.WriteLine ();
 					Console.ForegroundColor = ConsoleColor.Blue;
-					Console.WriteLine ("Iteration "+(i+1).ToString()+":");
+					Console.WriteLine ("Iteration " + (i + 1).ToString () + ":");
+					Console.ResetColor ();
 
-					// Dump city names
-					Console.ForegroundColor = ConsoleColor.Black;
-					Console.Write ("\t");
-					for (int k = 0; k < n; k++)
-						if(!vertexUsed[k])
-							Console.Write (string.Format(formatStr,cityNames[k]));
-					Console.WriteLine ();
+					if (latex) {
+						var sb = new StringBuilder ();
 
-					// Dump alt
-					Console.Write ("alt\t");
-					for (int k = 0; k < n; k++)
-						if(!vertexUsed[k])
-							Console.Write (string.Format(formatStr,minDistances[k]));
-					Console.WriteLine ();
+						var visitedCities = 1;
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								visitedCities++;
 
-					// Dump current city
-					Console.Write (cityNames[currentCity]+"\t");
-					for (int k = 0; k < n; k++)
-						if(!vertexUsed[k])
-							Console.Write (string.Format(formatStr,inputMatrix[currentCity][k]));
-					Console.WriteLine ();
+						sb.Append (@"$$ \begin{tabular}{").Append ('l', visitedCities).AppendLine ("}");
+
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								sb.Append ("&").Append (cityNames [k]);
+						sb.AppendLine (@"\\");
+						sb.Append ("alt");
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								sb.Append ("&").Append (minDistances [k]);
+						sb.AppendLine (@"\\");
+
+						sb.Append (cityNames[currentCity]).Append(@"$\rightarrow$X");
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								sb.Append ("&").Append (inputMatrix [currentCity] [k]);
+						sb.AppendLine (@"\\");
+						sb.Append (@"\hline");
+						Console.WriteLine (sb.ToString ());
+					} else {
+						// Dump city names
+						Console.ForegroundColor = ConsoleColor.Black;
+						Console.Write ("\t");
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								Console.Write (string.Format (formatStr, cityNames [k]));
+						Console.WriteLine ();
+
+						// Dump alt
+						Console.Write ("alt\t");
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								Console.Write (string.Format (formatStr, minDistances [k]));
+						Console.WriteLine ();
+
+						// Dump current city
+						Console.Write (cityNames [currentCity] + "\t");
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								Console.Write (string.Format (formatStr, inputMatrix [currentCity] [k]));
+						Console.WriteLine ();
+					}
 				}
 
 				int nextCity=-1;
@@ -236,13 +292,22 @@ namespace tsp
 
 				if (showProgress) {
 					// Dump min
-					Console.ForegroundColor = ConsoleColor.Green;
-					Console.Write ("min\t");
-					for (int k = 0; k < n; k++)
-						if(!vertexUsed[k])
-							Console.Write (string.Format(formatStr,minDistances[k]));
-					Console.WriteLine ();
-					Console.ForegroundColor = ConsoleColor.Black;
+					if (latex) {
+						var sb = new StringBuilder ("min");
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								sb.Append('&').Append (minDistances [k]);
+						sb.AppendLine (@"\\").AppendLine (@"\end{tabular} $$");
+						Console.WriteLine (sb.ToString ());
+					}else{
+						Console.ForegroundColor = ConsoleColor.Green;
+						Console.Write ("min\t");
+						for (int k = 0; k < n; k++)
+							if (!vertexUsed [k])
+								Console.Write (string.Format (formatStr, minDistances [k]));
+						Console.WriteLine ();
+						Console.ForegroundColor = ConsoleColor.Black;
+					}
 				}
 
 				// Station setzen
@@ -250,11 +315,14 @@ namespace tsp
 					Console.ForegroundColor = ConsoleColor.Gray;
 					Console.WriteLine ();
 					Console.WriteLine ("Nächste Station setzen..");
-					Console.ForegroundColor = ConsoleColor.Black;
+					Console.ResetColor ();
 				}
 
 				float statMin=float.PositiveInfinity;
 				int insertionIndex = 0;
+				if (latex)
+					Console.WriteLine (@"$$ \begin{tabular}{lll}");
+
 				for(int j = 0; j<tourResult.Count-1;j++)
 				{
 					var A = tourResult [j];
@@ -262,10 +330,17 @@ namespace tsp
 					var delta = inputMatrix [A] [nextCity] + inputMatrix[nextCity][C] - inputMatrix [A] [C];
 
 					if (showProgress) {
-						Console.Write ("("+cityNames[A]+"->"+cityNames[C]+")="+inputMatrix [A] [C]);
-						Console.Write ("\t");
-						Console.Write ("("+cityNames[A]+"->"+cityNames[nextCity] +"->"+cityNames[C]+")="+(inputMatrix [A] [nextCity] + inputMatrix[nextCity][C]));
-						Console.WriteLine("\tdelta="+delta);
+						if (latex) {
+							Console.Write ("("+cityNames [A] + "$\\rightarrow$" + cityNames [C] + ")=" + inputMatrix [A] [C]);
+							Console.Write ('&');
+							Console.Write ("(" + cityNames [A] + "$\\rightarrow$" + cityNames [nextCity] + "$\\rightarrow$" + cityNames [C] + ")=" + (inputMatrix [A] [nextCity] + inputMatrix [nextCity] [C]));
+							Console.WriteLine ("&delta=" + delta+@"\\");
+						} else {
+							Console.Write ("(" + cityNames [A] + "->" + cityNames [C] + ")=" + inputMatrix [A] [C]);
+							Console.Write ("\t");
+							Console.Write ("(" + cityNames [A] + "->" + cityNames [nextCity] + "->" + cityNames [C] + ")=" + (inputMatrix [A] [nextCity] + inputMatrix [nextCity] [C]));
+							Console.WriteLine ("\tdelta=" + delta);
+						}
 					}
 
 					if (statMin > delta) {
@@ -275,8 +350,12 @@ namespace tsp
 				}
 
 				if(showProgress){
-					Console.ForegroundColor = ConsoleColor.Red;
-					Console.WriteLine("min(delta)="+statMin+" => Insert "+cityNames[nextCity]+" between "+ cityNames[tourResult[insertionIndex-1]] + " and "+cityNames[tourResult[insertionIndex]]);
+					if (latex)
+						Console.WriteLine (@"\end{tabular} $$");
+					else {
+						Console.ForegroundColor = ConsoleColor.Red;
+						Console.WriteLine ("min(delta)=" + statMin + " => Insert " + cityNames [nextCity] + " between " + cityNames [tourResult [insertionIndex - 1]] + " and " + cityNames [tourResult [insertionIndex]]);
+					}
 				}
 
 				tourResult.Insert(insertionIndex,nextCity);
@@ -293,6 +372,9 @@ namespace tsp
 		#endregion
 
 		#region BnB
+		/// <summary>
+		/// Calculates the shortest route via branch and bound. Incomplete!
+		/// </summary>
 		public int[] CalcViaBranchAndBound(float maxWeight, int iterationLimit = 0)
 		{
 			if (iterationLimit <= 0)
@@ -314,8 +396,6 @@ namespace tsp
 			int t_y, t_x;
 			float maxRemovableValue;
 			searchNextPointtoRemove (graph, out t_y, out t_x, out maxRemovableValue);
-
-
 
 			graph [t_y] [t_x] = float.PositiveInfinity;
 
